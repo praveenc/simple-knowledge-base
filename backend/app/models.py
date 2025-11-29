@@ -165,6 +165,20 @@ class EncodeDocResponse(BaseModel):
     )
 
 
+class UploadDocResponse(BaseModel):
+    """Response model for file upload encoding."""
+
+    status: str = Field(..., description="Operation status: 'success' or 'error'")
+    message: str = Field(..., description="Status message")
+    index_name: str = Field(..., description="Index the document was added to")
+    filename: str = Field(..., description="Original filename of the uploaded document")
+    chunk_count: int = Field(default=0, description="Number of chunks created")
+    token_counts: list[int] = Field(
+        default_factory=list,
+        description="Token count for each chunk",
+    )
+
+
 class EncodeBatchResponse(BaseModel):
     """Response model for batch document encoding."""
 

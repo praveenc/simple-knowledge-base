@@ -40,25 +40,55 @@ function App() {
   }, []);
 
   const addNotification = useCallback((
-    type: 'success' | 'error' | 'warning' | 'info',
+    type: 'success' | 'error' | 'warning' | 'info' | 'in-progress',
     header: string,
-    content?: string
-  ) => {
-    const id = Date.now().toString();
-    setNotifications((prev) => [
-      ...prev,
-      {
-        type,
-        header,
-        content,
-        dismissible: true,
-        dismissLabel: 'Dismiss',
-        onDismiss: () => {
-          setNotifications((prev) => prev.filter((n) => n.id !== id));
+    content?: React.ReactNode,
+    options?: { id?: string; loading?: boolean; dismissible?: boolean }
+  ): string => {
+    const id = options?.id || Date.now().toString();
+    
+    const dismissNotification = () => {
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+    };
+    
+    // Auto-dismiss success and info notifications after 5 seconds (not in-progress)
+    if (type === 'success' || type === 'info') {
+      setTimeout(dismissNotification, 5000);
+    }
+    
+    setNotifications((prev) => {
+      // If id exists, update it; otherwise add new
+      const existing = prev.find((n) => n.id === id);
+      if (existing) {
+        return prev.map((n) => n.id === id ? {
+          ...n,
+          type,
+          header,
+          content,
+          loading: options?.loading,
+          dismissible: options?.dismissible ?? true,
+        } : n);
+      }
+      return [
+        ...prev,
+        {
+          type,
+          header,
+          content,
+          loading: options?.loading,
+          dismissible: options?.dismissible ?? true,
+          dismissLabel: 'Dismiss',
+          onDismiss: dismissNotification,
+          id,
         },
-        id,
-      },
-    ]);
+      ];
+    });
+    
+    return id;
+  }, []);
+  
+  const removeNotification = useCallback((id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
   }, []);
 
   const handleSearch = useCallback(async (query: string, indexName: string) => {
@@ -95,7 +125,7 @@ function App() {
 
   return (
     <AppLayout
-      notifications={<Flashbar items={notifications} />}
+      notifications={<Flashbar items={notifications} stackItems />}
       navigationHide
       toolsHide
       content={
@@ -166,7 +196,10 @@ function App() {
                     </SpaceBetween>
                   ),
                   content: (
-                    <AddKnowledge onNotification={addNotification} />
+                    <AddKnowledge 
+                      onNotification={addNotification} 
+                      onRemoveNotification={removeNotification}
+                    />
                   ),
                 },
               ]}

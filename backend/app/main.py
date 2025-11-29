@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import re
+import tempfile
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, File, Form, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
@@ -19,6 +22,7 @@ from app.exceptions import (
     IndexNotFoundError,
 )
 from app.models import (
+    INDEX_NAME_PATTERN,
     CreateIndexRequest,
     CreateIndexResponse,
     EncodeBatchRequest,
@@ -31,6 +35,7 @@ from app.models import (
     QueryRequest,
     QueryResponse,
     SearchResult,
+    UploadDocResponse,
 )
 from app.services import document_processor, model_manager
 
@@ -299,6 +304,122 @@ async def encode_document(request: EncodeDocRequest) -> EncodeDocResponse:
         chunk_count=len(chunks),
         token_counts=token_counts,
     )
+
+
+# Allowed file extensions for upload
+ALLOWED_EXTENSIONS = {".md", ".txt"}
+
+
+@app.post(
+    "/upload_doc",
+    response_model=UploadDocResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid file or index name"},
+        404: {"model": ErrorResponse, "description": "Index not found"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+    },
+)
+async def upload_document(
+    file: UploadFile = File(..., description="Document file to upload"),
+    index_name: str = Form(..., description="Target index name"),
+) -> UploadDocResponse:
+    """
+    Upload and encode a document file into a specific index.
+
+    Accepts a file upload, validates the file type, processes the content,
+    generates embeddings, and stores the chunks in the specified index.
+    """
+    # Validate index name format
+    if not re.match(INDEX_NAME_PATTERN, index_name):
+        raise ValueError(
+            f"Invalid index name '{index_name}'. Must start with a letter, "
+            "followed by alphanumeric characters, underscores, or hyphens.",
+        )
+
+    # Verify index exists
+    if not db_manager.index_exists(index_name):
+        raise IndexNotFoundError(index_name)
+
+    # Validate file
+    if not file.filename:
+        raise ValueError("No filename provided")
+
+    file_ext = Path(file.filename).suffix.lower()
+    if file_ext not in ALLOWED_EXTENSIONS:
+        raise ValueError(
+            f"Unsupported file type '{file_ext}'. "
+            f"Allowed types: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+        )
+
+    logger.info(f"Uploading document: {file.filename} -> index: {index_name}")
+
+    # Read file content
+    content = await file.read()
+    try:
+        text_content = content.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise ValueError(
+            f"File encoding error: {e}. Please ensure the file is UTF-8 encoded.",
+        ) from e
+
+    if not text_content.strip():
+        return UploadDocResponse(
+            status="success",
+            message="Document processed but no content found (empty file)",
+            index_name=index_name,
+            filename=file.filename,
+            chunk_count=0,
+            token_counts=[],
+        )
+
+    # Write to temp file for processing (reuse existing document processor)
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix=file_ext,
+        delete=False,
+        encoding="utf-8",
+    ) as tmp_file:
+        tmp_file.write(text_content)
+        tmp_path = tmp_file.name
+
+    try:
+        # Process document using existing processor
+        chunks, embeddings, offsets, token_counts = document_processor.process_document(
+            tmp_path,
+        )
+
+        if not chunks:
+            return UploadDocResponse(
+                status="success",
+                message="Document processed but no chunks generated",
+                index_name=index_name,
+                filename=file.filename,
+                chunk_count=0,
+                token_counts=[],
+            )
+
+        # Store in database with original filename as source
+        db_manager.add_chunks(
+            index_name=index_name,
+            contents=chunks,
+            embeddings=embeddings,
+            source_document=file.filename,
+            chunk_offsets=offsets,
+            token_counts=token_counts,
+        )
+
+        return UploadDocResponse(
+            status="success",
+            message=f"Successfully encoded document with {len(chunks)} chunks",
+            index_name=index_name,
+            filename=file.filename,
+            chunk_count=len(chunks),
+            token_counts=token_counts,
+        )
+
+    finally:
+        # Clean up temp file
+        Path(tmp_path).unlink(missing_ok=True)
 
 
 async def _process_batch_async(

@@ -74,6 +74,15 @@ export interface EncodeBatchResponse {
   documents_queued?: number;
 }
 
+export interface UploadDocResponse {
+  status: string;
+  message: string;
+  index_name: string;
+  filename: string;
+  chunk_count: number;
+  token_counts: number[];
+}
+
 // =============================================================================
 // Query Types
 // =============================================================================

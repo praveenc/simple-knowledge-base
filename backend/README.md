@@ -130,9 +130,9 @@ GET /indexes/{index_name}/count
 }
 ```
 
-### Encode Single Document
+### Encode Single Document (Path)
 
-Add a document to a specific index.
+Add a document to a specific index using a server-side file path.
 
 ```bash
 POST /encode_doc
@@ -153,6 +153,33 @@ Content-Type: application/json
   "message": "Successfully encoded document with 5 chunks",
   "index_name": "my_documents",
   "document_path": "/path/to/document.md",
+  "chunk_count": 5,
+  "token_counts": [355, 467, 483, 345, 483]
+}
+```
+
+### Upload Document (File Upload)
+
+Upload and encode a document file directly via multipart form data.
+
+```bash
+POST /upload_doc
+Content-Type: multipart/form-data
+
+file: <binary file data>
+index_name: "my_documents"
+```
+
+**Supported file types:** `.md`, `.txt`
+
+**Response:**
+
+```json
+{
+  "status": "success",
+  "message": "Successfully encoded document with 5 chunks",
+  "index_name": "my_documents",
+  "filename": "document.md",
   "chunk_count": 5,
   "token_counts": [355, 467, 483, 345, 483]
 }

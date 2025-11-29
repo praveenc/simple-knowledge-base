@@ -1,9 +1,16 @@
 /**
  * AddKnowledge Component
  * Page for creating indexes and adding documents to the knowledge base
+ * 
+ * Flow:
+ * 1. Choose index mode: "Use existing" or "Create new"
+ * 2. Select/create index
+ * 3. Choose document source: "Single" or "Batch"
+ * 4. Add documents
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import type { ReactNode } from 'react';
 import {
   Alert,
   Box,
@@ -11,19 +18,19 @@ import {
   ColumnLayout,
   Container,
   ExpandableSection,
-  FileDropzone,
-  FileTokenGroup,
+  FileUpload,
   Form,
   FormField,
   Header,
   Input,
+  Modal,
+  ProgressBar,
   SpaceBetween,
   Tiles,
-  TokenGroup,
 } from '@cloudscape-design/components';
 
 import { IndexSelector } from './IndexSelector';
-import { createIndex, encodeDocument, encodeBatch } from '../api/client';
+import { createIndex, uploadDocument, encodeBatch, getIndexRecordCount } from '../api/client';
 
 // Index name validation pattern (must match backend)
 const INDEX_NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
@@ -42,13 +49,18 @@ function validateFileExtension(fileName: string): string | null {
 
 interface AddKnowledgeProps {
   onNotification: (
-    type: 'success' | 'error' | 'warning' | 'info',
+    type: 'success' | 'error' | 'warning' | 'info' | 'in-progress',
     header: string,
-    content?: string
-  ) => void;
+    content?: ReactNode,
+    options?: { id?: string; loading?: boolean; dismissible?: boolean }
+  ) => string;
+  onRemoveNotification: (id: string) => void;
 }
 
-export function AddKnowledge({ onNotification }: AddKnowledgeProps) {
+export function AddKnowledge({ onNotification, onRemoveNotification }: AddKnowledgeProps) {
+  // Index mode: use existing or create new
+  const [indexMode, setIndexMode] = useState<'existing' | 'new'>('existing');
+  
   // Create Index state
   const [newIndexName, setNewIndexName] = useState('');
   const [isCreatingIndex, setIsCreatingIndex] = useState(false);
@@ -56,19 +68,26 @@ export function AddKnowledge({ onNotification }: AddKnowledgeProps) {
 
   // Document encoding state
   const [selectedIndex, setSelectedIndex] = useState<string | null>(null);
-  const [documentPath, setDocumentPath] = useState('');
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [fileErrors, setFileErrors] = useState<Record<number, string>>({});
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [isEncodingDoc, setIsEncodingDoc] = useState(false);
+  
+  // Upload progress state
+  const [uploadProgress, setUploadProgress] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+  const [uploadResult, setUploadResult] = useState<{ filename: string; chunkCount: number } | null>(null);
 
   // Batch encoding state
   const [directoryPath, setDirectoryPath] = useState('');
-  const [filePatterns, setFilePatterns] = useState<string[]>(['*.md', '*.txt']);
-  const [newPattern, setNewPattern] = useState('');
+  const [filePatterns] = useState<string[]>(['*.md', '*.txt']);
   const [isEncodingBatch, setIsEncodingBatch] = useState(false);
+  const [showBatchConfirmModal, setShowBatchConfirmModal] = useState(false);
+  const [batchStarted, setBatchStarted] = useState(false);
+  const [preProcessRecordCount, setPreProcessRecordCount] = useState<number | null>(null);
 
-  // Mode selection
+  // Document source mode selection
   const [encodeMode, setEncodeMode] = useState<'single' | 'batch'>('single');
+  
+  // Determine if we have a valid index to work with
+  const activeIndex = indexMode === 'existing' ? selectedIndex : (isCreatingIndex ? null : selectedIndex);
 
   // Validate index name
   const isValidIndexName = INDEX_NAME_PATTERN.test(newIndexName);
@@ -96,63 +115,158 @@ export function AddKnowledge({ onNotification }: AddKnowledgeProps) {
     }
   }, [newIndexName, isValidIndexName, onNotification]);
 
-  // Handle single document encoding
-  const handleEncodeDocument = useCallback(async () => {
-    if (!selectedIndex || !documentPath) return;
+  // Handle file upload and encoding
+  const handleUploadDocument = useCallback(async () => {
+    if (!selectedIndex || uploadedFiles.length === 0) return;
+
+    const file = uploadedFiles[0];
+    
+    // Validate file extension
+    const error = validateFileExtension(file.name);
+    if (error) {
+      onNotification('error', 'Invalid file', error);
+      return;
+    }
 
     setIsEncodingDoc(true);
+    setUploadProgress('uploading');
+    setUploadResult(null);
+    
     try {
-      const response = await encodeDocument({
-        index_name: selectedIndex,
-        document_path: documentPath,
-      });
+      const response = await uploadDocument(file, selectedIndex);
+      setUploadProgress('success');
+      setUploadResult({ filename: response.filename, chunkCount: response.chunk_count });
       onNotification(
         'success',
         'Document encoded',
-        `${response.chunk_count} chunks created from ${response.document_path}`
+        `${response.chunk_count} chunks created from "${response.filename}"`
       );
-      setDocumentPath('');
+      setUploadedFiles([]);
       setIndexRefreshTrigger((prev) => prev + 1);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to encode document';
-      onNotification('error', 'Encoding failed', message);
+      setUploadProgress('error');
+      const message = err instanceof Error ? err.message : 'Failed to upload document';
+      onNotification('error', 'Upload failed', message);
     } finally {
       setIsEncodingDoc(false);
     }
-  }, [selectedIndex, documentPath, onNotification]);
+  }, [selectedIndex, uploadedFiles, onNotification]);
+  
+  // Reset progress when file changes
+  const handleFileChange = useCallback((files: File[]) => {
+    setUploadedFiles(files);
+    setUploadProgress('idle');
+    setUploadResult(null);
+  }, []);
 
-  // Handle batch encoding
+  // Polling interval ref
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // Handle batch encoding with progress polling
   const handleEncodeBatch = useCallback(async () => {
     if (!selectedIndex || !directoryPath) return;
 
+    const initialCount = preProcessRecordCount ?? 0;
+    const notificationId = `batch-${Date.now()}`;
+    let lastCount = initialCount;
+    let stablePolls = 0;
+
     setIsEncodingBatch(true);
+    
     try {
       const response = await encodeBatch({
         index_name: selectedIndex,
         directory_path: directoryPath,
         file_patterns: filePatterns.length > 0 ? filePatterns : undefined,
       });
+      
+      const docsQueued = response.documents_queued ?? 0;
+      
+      // Show progress notification
       onNotification(
-        'success',
-        'Batch processing started',
-        `${response.documents_queued} documents queued for processing`
+        'in-progress',
+        'Batch processing in progress',
+        `Processing ${docsQueued} documents from directory...`,
+        { id: notificationId, loading: true, dismissible: false }
       );
+      
       setDirectoryPath('');
+      setBatchStarted(true);
+      setIsEncodingBatch(false);
+      
+      // Start polling for completion
+      pollingIntervalRef.current = setInterval(async () => {
+        try {
+          const countResponse = await getIndexRecordCount(selectedIndex);
+          const currentCount = countResponse.record_count;
+          const addedDocs = currentCount - initialCount;
+          
+          // Update progress notification
+          onNotification(
+            'in-progress',
+            'Batch processing in progress',
+            `Added ${addedDocs} chunks so far... (${currentCount} total in index)`,
+            { id: notificationId, loading: true, dismissible: false }
+          );
+          
+          // Check if count has stabilized (same for 2 consecutive polls)
+          if (currentCount === lastCount && addedDocs > 0) {
+            stablePolls++;
+            if (stablePolls >= 2) {
+              // Processing complete
+              if (pollingIntervalRef.current) {
+                clearInterval(pollingIntervalRef.current);
+                pollingIntervalRef.current = null;
+              }
+              
+              // Remove progress notification and show success
+              onRemoveNotification(notificationId);
+              onNotification(
+                'success',
+                'Batch processing complete',
+                `Successfully added ${addedDocs} chunks to "${selectedIndex}" (${currentCount} total records)`
+              );
+              
+              // Refresh index counts
+              setIndexRefreshTrigger((prev) => prev + 1);
+            }
+          } else {
+            stablePolls = 0;
+            lastCount = currentCount;
+          }
+        } catch {
+          // Ignore polling errors, will retry
+        }
+      }, 3000); // Poll every 3 seconds
+      
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start batch encoding';
       onNotification('error', 'Batch encoding failed', message);
-    } finally {
       setIsEncodingBatch(false);
     }
-  }, [selectedIndex, directoryPath, filePatterns, onNotification]);
+  }, [selectedIndex, directoryPath, filePatterns, preProcessRecordCount, onNotification, onRemoveNotification]);
 
-  // Handle adding a file pattern
-  const handleAddPattern = () => {
-    if (newPattern && !filePatterns.includes(newPattern)) {
-      setFilePatterns([...filePatterns, newPattern]);
-      setNewPattern('');
+  // Handle showing batch confirmation modal with record count
+  const handleShowBatchConfirm = useCallback(async () => {
+    if (selectedIndex) {
+      try {
+        const response = await getIndexRecordCount(selectedIndex);
+        setPreProcessRecordCount(response.record_count);
+      } catch {
+        setPreProcessRecordCount(null);
+      }
     }
-  };
+    setShowBatchConfirmModal(true);
+  }, [selectedIndex]);
 
   return (
     <SpaceBetween size="l">
@@ -164,10 +278,10 @@ export function AddKnowledge({ onNotification }: AddKnowledgeProps) {
       >
         <ColumnLayout columns={3} variant="text-grid">
           <div>
-            <Box variant="awsui-key-label">1. Create Index</Box>
+            <Box variant="awsui-key-label">1. Select or Create Index</Box>
             <Box color="text-body-secondary">
-              An index is a container for your knowledge. Each index can hold
-              documents related to a specific topic or project.
+              Choose an existing index or create a new one. An index is a 
+              container for organizing related documents.
             </Box>
           </div>
           <div>
@@ -187,96 +301,135 @@ export function AddKnowledge({ onNotification }: AddKnowledgeProps) {
         </ColumnLayout>
       </ExpandableSection>
 
-      {/* Section 1: Create Index */}
+      {/* Main Container: Add Knowledge */}
       <Container
         header={
           <Header
             variant="h2"
-            description="Create a new index to store your knowledge"
-          >
-            <SpaceBetween size="xs" direction="horizontal" alignItems="center">
-              <img src="/add-index.svg" alt="" style={{ height: '24px', width: '24px' }} />
-              <span>Create Index</span>
-            </SpaceBetween>
-          </Header>
-        }
-      >
-        <Form
-          actions={
-            <Button
-              variant="primary"
-              onClick={handleCreateIndex}
-              loading={isCreatingIndex}
-              loadingText="Creating..."
-              disabled={!newIndexName || !isValidIndexName}
-              iconName="add-plus"
-            >
-              Create Index
-            </Button>
-          }
-        >
-          <FormField
-            label="Index Name"
-            description="A unique name for your index (letters, numbers, underscores, hyphens)"
-            errorText={indexNameError}
-            constraintText="Must start with a letter"
-          >
-            <Input
-              value={newIndexName}
-              onChange={({ detail }) => setNewIndexName(detail.value)}
-              placeholder="my-knowledge-base"
-              disabled={isCreatingIndex}
-            />
-          </FormField>
-        </Form>
-      </Container>
-
-      {/* Section 2: Add Documents */}
-      <Container
-        header={
-          <Header
-            variant="h2"
-            description="Add documents to an existing index"
+            description="Add documents to your knowledge base"
           >
             <SpaceBetween size="xs" direction="horizontal" alignItems="center">
               <img src="/add-file.svg" alt="" style={{ height: '24px', width: '24px' }} />
-              <span>Add Documents</span>
+              <span>Add Knowledge</span>
             </SpaceBetween>
           </Header>
         }
       >
         <SpaceBetween size="l">
-          {/* Index Selection */}
-          <IndexSelector
-            selectedIndex={selectedIndex}
-            onIndexChange={setSelectedIndex}
-            refreshTrigger={indexRefreshTrigger}
-            description="Select the index to add documents to"
-          />
+          {/* Step 1: Index Selection Mode */}
+          <FormField 
+            label="Step 1: Choose Index"
+            description="Select an existing index or create a new one"
+          >
+            <Tiles
+              columns={2}
+              value={indexMode}
+              onChange={({ detail }) => {
+                setIndexMode(detail.value as 'existing' | 'new');
+                // Clear selection when switching modes
+                if (detail.value === 'new') {
+                  setSelectedIndex(null);
+                }
+              }}
+              items={[
+                {
+                  value: 'existing',
+                  label: 'Use Existing Index',
+                  description: 'Add documents to an index you\'ve already created',
+                },
+                {
+                  value: 'new',
+                  label: 'Create New Index',
+                  description: 'Create a new index and add documents to it',
+                },
+              ]}
+            />
+          </FormField>
 
-          {!selectedIndex && (
+          {/* Existing Index Selection */}
+          {indexMode === 'existing' && (
+            <IndexSelector
+              selectedIndex={selectedIndex}
+              onIndexChange={setSelectedIndex}
+              refreshTrigger={indexRefreshTrigger}
+              description="Select the index to add documents to"
+            />
+          )}
+
+          {/* New Index Creation */}
+          {indexMode === 'new' && (
+            <SpaceBetween size="m">
+              <FormField
+                label="Index Name"
+                description="A unique name for your new index (letters, numbers, underscores, hyphens)"
+                errorText={indexNameError}
+                constraintText="Must start with a letter"
+              >
+                <SpaceBetween size="xs" direction="horizontal">
+                  <div style={{ flexGrow: 1 }}>
+                    <Input
+                      value={newIndexName}
+                      onChange={({ detail }) => setNewIndexName(detail.value)}
+                      placeholder="my-knowledge-base"
+                      disabled={isCreatingIndex}
+                    />
+                  </div>
+                  <Button
+                    variant="primary"
+                    onClick={handleCreateIndex}
+                    loading={isCreatingIndex}
+                    loadingText="Creating..."
+                    disabled={!newIndexName || !isValidIndexName}
+                    iconName="add-plus"
+                  >
+                    Create
+                  </Button>
+                </SpaceBetween>
+              </FormField>
+              
+              {selectedIndex && (
+                <Alert type="success" statusIconAriaLabel="Success">
+                  Index <strong>{selectedIndex}</strong> created successfully! You can now add documents below.
+                </Alert>
+              )}
+            </SpaceBetween>
+          )}
+
+          {/* Show prompt if no index selected */}
+          {!activeIndex && (
             <Alert type="info">
-              Select an index above to add documents. If you don't have any indexes, create one first.
+              {indexMode === 'existing' 
+                ? 'Select an index above to add documents. If you don\'t have any indexes, switch to "Create New Index".'
+                : 'Enter an index name and click "Create" to continue.'}
             </Alert>
           )}
 
-          {selectedIndex && (
+          {/* Step 2: Add Documents (only shown when index is selected) */}
+          {activeIndex && (
             <>
-              {/* Mode Selection */}
+              <Box variant="h3" padding={{ top: 's' }}>
+                <SpaceBetween size="xs" direction="horizontal" alignItems="center">
+                  <span>Step 2: Add Documents to</span>
+                  <Box color="text-status-info" fontWeight="bold">{activeIndex}</Box>
+                </SpaceBetween>
+              </Box>
+
+              {/* Document Source Mode Selection */}
               <FormField label="Document Source">
                 <Tiles
+                  columns={2}
                   value={encodeMode}
                   onChange={({ detail }) => setEncodeMode(detail.value as 'single' | 'batch')}
                   items={[
                     {
                       value: 'single',
                       label: 'Single Document',
-                      description: 'Add one document by file path',
+                      description: 'Upload a single document file',
                     },
                     {
                       value: 'batch',
                       label: 'Batch Directory',
-                      description: 'Process all matching documents in a directory',
+                      description: 'Process .md and .txt files from a directory',
                     },
                   ]}
                 />
@@ -284,109 +437,71 @@ export function AddKnowledge({ onNotification }: AddKnowledgeProps) {
 
               {/* Single Document Mode */}
               {encodeMode === 'single' && (
-                <SpaceBetween size="m">
-                  {/* File Dropzone for visual feedback */}
-                  <FormField
-                    label="Select Document"
-                    description="Drag and drop a file to preview, then enter the server path below"
-                  >
-                    <FileDropzone
-                      onChange={({ detail }) => {
-                        const files = detail.value;
-                        setSelectedFiles(files);
-                        
-                        // Validate each file and set errors
-                        const errors: Record<number, string> = {};
-                        files.forEach((file, index) => {
-                          const error = validateFileExtension(file.name);
-                          if (error) {
-                            errors[index] = error;
-                          }
-                        });
-                        setFileErrors(errors);
-                        
-                        // Use the file name as a hint for the path (only for valid files)
-                        if (files.length > 0) {
-                          const fileName = files[0].name;
-                          const error = validateFileExtension(fileName);
-                          if (!error && !documentPath) {
-                            setDocumentPath(`/path/to/${fileName}`);
-                          }
-                        }
-                      }}
-                    >
-                      <Box textAlign="center" padding="l" color="text-body-secondary">
-                        <SpaceBetween size="s" alignItems="center">
-                          <Box fontSize="heading-m">Drop file here</Box>
-                          <Box>or click to browse</Box>
-                          <Box fontSize="body-s">
-                            Supported formats: {ALLOWED_EXTENSIONS.join(', ')}
-                          </Box>
-                        </SpaceBetween>
-                      </Box>
-                    </FileDropzone>
-                  </FormField>
-
-                  {/* Display selected files with validation errors */}
-                  {selectedFiles.length > 0 && (
-                    <FileTokenGroup
-                      items={selectedFiles.map((file, index) => ({
-                        file,
-                        loading: isEncodingDoc,
-                        errorText: fileErrors[index],
-                      }))}
-                      onDismiss={({ detail }) => {
-                        setSelectedFiles((files) =>
-                          files.filter((_, index) => index !== detail.fileIndex)
-                        );
-                        // Also remove the error for dismissed file
-                        setFileErrors((prev) => {
-                          const newErrors: Record<number, string> = {};
-                          Object.keys(prev).forEach((key) => {
-                            const keyNum = parseInt(key);
-                            if (keyNum < detail.fileIndex) {
-                              newErrors[keyNum] = prev[keyNum];
-                            } else if (keyNum > detail.fileIndex) {
-                              newErrors[keyNum - 1] = prev[keyNum];
-                            }
-                          });
-                          return newErrors;
-                        });
-                      }}
-                    />
-                  )}
-
-                  <Alert type="info" statusIconAriaLabel="Info">
-                    <strong>Note:</strong> Enter the server-side file path below. The file must be accessible from the backend server.
-                  </Alert>
-
+                <SpaceBetween size="l">
                   <Form
                     actions={
                       <Button
                         variant="primary"
-                        onClick={handleEncodeDocument}
+                        onClick={handleUploadDocument}
                         loading={isEncodingDoc}
-                        loadingText="Encoding..."
-                        disabled={!documentPath}
+                        loadingText="Uploading & Encoding..."
+                        disabled={uploadedFiles.length === 0 || uploadProgress === 'uploading'}
                         iconName="upload"
                       >
-                        Encode Document
+                        Upload & Encode
                       </Button>
                     }
                   >
                     <FormField
-                      label="Document Path"
-                      description="Absolute path to the document file on the server"
-                      constraintText={`Supported formats: ${ALLOWED_EXTENSIONS.join(', ')}`}
+                      label="Select Document"
+                      description="Choose a document file to upload and encode"
                     >
-                      <Input
-                        value={documentPath}
-                        onChange={({ detail }) => setDocumentPath(detail.value)}
-                        placeholder="/path/to/document.md"
-                        disabled={isEncodingDoc}
+                      <FileUpload
+                        value={uploadedFiles}
+                        onChange={({ detail }) => handleFileChange(detail.value)}
+                        accept={ALLOWED_EXTENSIONS.join(',')}
+                        i18nStrings={{
+                          uploadButtonText: (multiple) => multiple ? 'Choose files' : 'Choose file',
+                          dropzoneText: (multiple) => multiple ? 'Drop files to upload' : 'Drop file to upload',
+                          removeFileAriaLabel: (fileIndex) => `Remove file ${fileIndex + 1}`,
+                          errorIconAriaLabel: 'Error',
+                          limitShowFewer: 'Show fewer files',
+                          limitShowMore: 'Show more files',
+                        }}
+                        showFileLastModified
+                        showFileSize
+                        constraintText={`Supported formats: ${ALLOWED_EXTENSIONS.join(', ')}`}
+                        errorText={
+                          uploadedFiles.length > 0 && validateFileExtension(uploadedFiles[0].name)
+                            ? validateFileExtension(uploadedFiles[0].name)
+                            : undefined
+                        }
                       />
                     </FormField>
                   </Form>
+                  
+                  {/* Progress indicator */}
+                  {uploadProgress !== 'idle' && (
+                    <ProgressBar
+                      value={uploadProgress === 'uploading' ? 50 : 100}
+                      status={
+                        uploadProgress === 'uploading' ? 'in-progress' :
+                        uploadProgress === 'success' ? 'success' : 'error'
+                      }
+                      label="Document Processing"
+                      description={
+                        uploadProgress === 'uploading' 
+                          ? 'Uploading and encoding document...' 
+                          : uploadProgress === 'success' && uploadResult
+                            ? `Successfully created ${uploadResult.chunkCount} chunks from "${uploadResult.filename}"`
+                            : 'Upload failed'
+                      }
+                      resultText={
+                        uploadProgress === 'success' ? 'Complete' :
+                        uploadProgress === 'error' ? 'Failed' : undefined
+                      }
+                    />
+                  )}
                 </SpaceBetween>
               )}
 
@@ -396,7 +511,7 @@ export function AddKnowledge({ onNotification }: AddKnowledgeProps) {
                   actions={
                     <Button
                       variant="primary"
-                      onClick={handleEncodeBatch}
+                      onClick={handleShowBatchConfirm}
                       loading={isEncodingBatch}
                       loadingText="Starting batch..."
                       disabled={!directoryPath}
@@ -409,7 +524,7 @@ export function AddKnowledge({ onNotification }: AddKnowledgeProps) {
                   <SpaceBetween size="m">
                     <FormField
                       label="Directory Path"
-                      description="Absolute path to the directory containing documents"
+                      description="Absolute path to the directory containing .md and .txt documents"
                     >
                       <Input
                         value={directoryPath}
@@ -419,49 +534,12 @@ export function AddKnowledge({ onNotification }: AddKnowledgeProps) {
                       />
                     </FormField>
 
-                    <ExpandableSection
-                      headerText="File Patterns"
-                      variant="footer"
-                      defaultExpanded={false}
-                    >
-                      <SpaceBetween size="s">
-                        <Box color="text-body-secondary" fontSize="body-s">
-                          Specify which file patterns to include. Defaults to common text formats.
-                        </Box>
-                        
-                        <TokenGroup
-                          items={filePatterns.map((pattern) => ({ label: pattern }))}
-                          onDismiss={({ detail }) => {
-                            setFilePatterns(
-                              filePatterns.filter((_, i) => i !== detail.itemIndex)
-                            );
-                          }}
-                        />
-
-                        <SpaceBetween size="xs" direction="horizontal">
-                          <Input
-                            value={newPattern}
-                            onChange={({ detail }) => setNewPattern(detail.value)}
-                            placeholder="*.json"
-                            onKeyDown={({ detail }) => {
-                              if (detail.key === 'Enter') handleAddPattern();
-                            }}
-                          />
-                          <Button
-                            onClick={handleAddPattern}
-                            disabled={!newPattern}
-                            iconName="add-plus"
-                          >
-                            Add
-                          </Button>
-                        </SpaceBetween>
-                      </SpaceBetween>
-                    </ExpandableSection>
-
-                    <Alert type="info" header="Background Processing">
-                      Batch processing runs in the background. You can continue using the application
-                      while documents are being processed.
-                    </Alert>
+                    {!batchStarted && (
+                      <Alert type="info" header="Background Processing">
+                        Batch processing runs in the background. You can continue using the application
+                        while documents are being processed.
+                      </Alert>
+                    )}
                   </SpaceBetween>
                 </Form>
               )}
@@ -469,6 +547,67 @@ export function AddKnowledge({ onNotification }: AddKnowledgeProps) {
           )}
         </SpaceBetween>
       </Container>
+
+      {/* Batch Processing Confirmation Modal */}
+      <Modal
+        visible={showBatchConfirmModal}
+        onDismiss={() => setShowBatchConfirmModal(false)}
+        header="Confirm Batch Processing"
+        size="medium"
+        closeAriaLabel="Close confirmation"
+        footer={
+          <Box float="right">
+            <SpaceBetween direction="horizontal" size="xs">
+              <Button 
+                variant="link" 
+                onClick={() => setShowBatchConfirmModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button 
+                variant="primary" 
+                onClick={() => {
+                  setShowBatchConfirmModal(false);
+                  handleEncodeBatch();
+                }}
+              >
+                Start Processing
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="m">
+          <Box variant="p">
+            You are about to start batch processing with the following settings:
+          </Box>
+          
+          <ColumnLayout columns={2} variant="text-grid">
+            <div>
+              <Box variant="awsui-key-label">Target Index</Box>
+              <Box fontWeight="bold">{activeIndex}</Box>
+            </div>
+            <div>
+              <Box variant="awsui-key-label">Current Records</Box>
+              <Box>{preProcessRecordCount !== null ? preProcessRecordCount.toLocaleString() : '—'}</Box>
+            </div>
+            <div>
+              <Box variant="awsui-key-label">Supported Formats</Box>
+              <Box>{filePatterns.join(', ')}</Box>
+            </div>
+          </ColumnLayout>
+          
+          <div>
+            <Box variant="awsui-key-label">Directory Path</Box>
+            <Box variant="code" fontSize="body-s">{directoryPath}</Box>
+          </div>
+
+          <Alert type="info">
+            This will process all .md and .txt files in the specified directory. 
+            Processing runs in the background and may take some time depending on the number of documents.
+          </Alert>
+        </SpaceBetween>
+      </Modal>
     </SpaceBetween>
   );
 }

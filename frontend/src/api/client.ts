@@ -14,6 +14,7 @@ import type {
   ListIndexesResponse,
   QueryRequest,
   QueryResponse,
+  UploadDocResponse,
 } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -99,6 +100,21 @@ export async function encodeBatch(request: EncodeBatchRequest): Promise<EncodeBa
     body: JSON.stringify(request),
   });
   return handleResponse<EncodeBatchResponse>(response);
+}
+
+/**
+ * Upload and encode a document file
+ */
+export async function uploadDocument(file: File, indexName: string): Promise<UploadDocResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('index_name', indexName);
+
+  const response = await fetch(`${API_BASE_URL}/upload_doc`, {
+    method: 'POST',
+    body: formData,
+  });
+  return handleResponse<UploadDocResponse>(response);
 }
 
 // =============================================================================
