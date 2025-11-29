@@ -1,13 +1,15 @@
-"""Property-based tests using Hypothesis.
+"""
+Property-based tests using Hypothesis.
 
 These tests verify universal properties across many generated inputs,
 as specified in the design document.
 """
 
 import pytest
-from hypothesis import given, settings, strategies as st, Phase
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
-from app.services import model_manager, DocumentProcessor
+from app.services import DocumentProcessor, model_manager
 
 
 class TestEmbeddingProperties:
@@ -16,7 +18,8 @@ class TestEmbeddingProperties:
     @given(st.text(min_size=1, max_size=500))
     @settings(max_examples=50, deadline=None)
     def test_embedding_always_768_dimensions(self, text: str):
-        """Property 3: Embedding Dimensionality Consistency.
+        """
+        Property 3: Embedding Dimensionality Consistency.
 
         For any text processed by the embedding model, the resulting
         embedding vector should have exactly 768 dimensions.
@@ -36,7 +39,8 @@ class TestEmbeddingProperties:
     @given(st.lists(st.text(min_size=1, max_size=100), min_size=1, max_size=10))
     @settings(max_examples=30, deadline=None)
     def test_batch_embedding_consistent_dimensions(self, texts: list[str]):
-        """Property 3: All batch embeddings have 768 dimensions.
+        """
+        Property 3: All batch embeddings have 768 dimensions.
 
         **Feature: semantic-knowledge-base, Property 3**
         **Validates: Requirements 1.4, 7.3**
@@ -59,7 +63,8 @@ class TestTokenCountProperties:
     @given(st.text(min_size=0, max_size=1000))
     @settings(max_examples=50)
     def test_token_count_non_negative(self, text: str):
-        """Token count should always be non-negative.
+        """
+        Token count should always be non-negative.
 
         **Feature: semantic-knowledge-base, Property 9: Chunk Token Count Accuracy**
         **Validates: Requirements 1.3, 1.6**
@@ -92,7 +97,8 @@ class TestRerankingProperties:
     )
     @settings(max_examples=30)
     def test_rerank_respects_top_k(self, query: str, documents: list[str], top_k: int):
-        """Property 7: Reranking respects top_k limit.
+        """
+        Property 7: Reranking respects top_k limit.
 
         **Feature: semantic-knowledge-base, Property 7**
         **Validates: Requirements 3.5, 3.6**
@@ -113,7 +119,8 @@ class TestRerankingProperties:
     )
     @settings(max_examples=30)
     def test_rerank_results_sorted_descending(self, query: str, documents: list[str]):
-        """Property 7: Results are sorted by relevance descending.
+        """
+        Property 7: Results are sorted by relevance descending.
 
         **Feature: semantic-knowledge-base, Property 7**
         **Validates: Requirements 3.5**
@@ -139,7 +146,8 @@ class TestChunkingProperties:
     @given(st.text(min_size=100, max_size=2000))
     @settings(max_examples=30)
     def test_chunking_produces_non_empty_chunks(self, text: str):
-        """All chunks produced should be non-empty.
+        """
+        All chunks produced should be non-empty.
 
         **Feature: semantic-knowledge-base, Property 2**
         **Validates: Requirements 1.3**
@@ -157,7 +165,8 @@ class TestChunkingProperties:
     @given(st.text(min_size=100, max_size=2000))
     @settings(max_examples=30)
     def test_chunking_offsets_match_chunks(self, text: str):
-        """Number of offsets should match number of chunks.
+        """
+        Number of offsets should match number of chunks.
 
         **Feature: semantic-knowledge-base, Property 1**
         **Validates: Requirements 1.2**
@@ -189,12 +198,14 @@ class TestInputValidationProperties:
 
     @given(st.integers(min_value=-100, max_value=0))
     def test_invalid_top_k_rejected(self, top_k: int):
-        """Property 10: Invalid top_k values should be rejected.
+        """
+        Property 10: Invalid top_k values should be rejected.
 
         **Feature: semantic-knowledge-base, Property 10**
         **Validates: Requirements 8.5**
         """
         from pydantic import ValidationError
+
         from app.models import QueryRequest
 
         with pytest.raises(ValidationError):
@@ -204,6 +215,7 @@ class TestInputValidationProperties:
     def test_excessive_top_k_rejected(self, top_k: int):
         """Property 10: Excessive top_k values should be rejected."""
         from pydantic import ValidationError
+
         from app.models import QueryRequest
 
         with pytest.raises(ValidationError):
