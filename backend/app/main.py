@@ -143,6 +143,23 @@ async def directory_not_found_handler(
     )
 
 
+@app.exception_handler(ValueError)
+async def value_error_handler(
+    _request: Request,
+    exc: ValueError,
+) -> JSONResponse:
+    """Handle ValueError exceptions (invalid input)."""
+    logger.warning(f"Invalid input: {exc}")
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={
+            "status": "error",
+            "message": str(exc),
+            "detail": str(exc),
+        },
+    )
+
+
 # =============================================================================
 # Health Check
 # =============================================================================

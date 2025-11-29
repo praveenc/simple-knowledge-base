@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from app.exceptions import DirectoryNotFoundError, DocumentNotFoundError
 from app.services import DocumentProcessor, ModelManager, model_manager
 
 
@@ -16,7 +17,8 @@ class TestModelManager:
         assert isinstance(model_manager, ModelManager)
 
     def test_embedding_dimension(self):
-        """Test that embeddings have correct dimension (768).
+        """
+        Test that embeddings have correct dimension (768).
 
         **Feature: semantic-knowledge-base, Property 3: Embedding Dimensionality**
         **Validates: Requirements 1.4, 3.2, 7.3**
@@ -45,7 +47,8 @@ class TestModelManager:
         assert isinstance(count, int)
 
     def test_rerank_returns_ordered_results(self):
-        """Test that reranking returns results ordered by score.
+        """
+        Test that reranking returns results ordered by score.
 
         **Feature: semantic-knowledge-base, Property 7: Search Results Ordering**
         **Validates: Requirements 3.5, 3.6**
@@ -96,18 +99,21 @@ class TestDocumentProcessor:
 
     def test_read_nonexistent_document(self, processor: DocumentProcessor):
         """Test reading nonexistent document raises error."""
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(DocumentNotFoundError):
             processor.read_document("/nonexistent/path/doc.md")
 
     def test_read_directory_raises_error(
-        self, processor: DocumentProcessor, sample_documents_dir: Path
+        self,
+        processor: DocumentProcessor,
+        sample_documents_dir: Path,
     ):
         """Test reading a directory raises ValueError."""
         with pytest.raises(ValueError, match="not a file"):
             processor.read_document(str(sample_documents_dir))
 
     def test_chunk_document_preserves_content(self, processor: DocumentProcessor):
-        """Test that chunking preserves document content.
+        """
+        Test that chunking preserves document content.
 
         **Feature: semantic-knowledge-base, Property 1: Content Preservation**
         **Validates: Requirements 1.2**
@@ -130,11 +136,13 @@ class TestDocumentProcessor:
         assert all(offset >= 0 for offset in offsets)
 
     def test_process_document(
-        self, processor: DocumentProcessor, sample_document: Path
+        self,
+        processor: DocumentProcessor,
+        sample_document: Path,
     ):
         """Test full document processing pipeline."""
         chunks, embeddings, offsets, token_counts = processor.process_document(
-            str(sample_document)
+            str(sample_document),
         )
 
         assert len(chunks) > 0
@@ -150,15 +158,19 @@ class TestDocumentProcessor:
         assert all(count > 0 for count in token_counts)
 
     def test_discover_documents(
-        self, processor: DocumentProcessor, sample_documents_dir: Path
+        self,
+        processor: DocumentProcessor,
+        sample_documents_dir: Path,
     ):
-        """Test document discovery in directory.
+        """
+        Test document discovery in directory.
 
         **Feature: semantic-knowledge-base, Property 5: Batch Document Discovery**
         **Validates: Requirements 2.2, 2.4**
         """
         documents = processor.discover_documents(
-            str(sample_documents_dir), patterns=["*.txt", "*.md"]
+            str(sample_documents_dir),
+            patterns=["*.txt", "*.md"],
         )
 
         # Should find 3 txt files + 1 md file in subdir
@@ -168,14 +180,18 @@ class TestDocumentProcessor:
         assert all(doc.is_file() for doc in documents)
 
     def test_discover_documents_with_pattern_filter(
-        self, processor: DocumentProcessor, sample_documents_dir: Path
+        self,
+        processor: DocumentProcessor,
+        sample_documents_dir: Path,
     ):
         """Test document discovery with specific pattern."""
         txt_docs = processor.discover_documents(
-            str(sample_documents_dir), patterns=["*.txt"]
+            str(sample_documents_dir),
+            patterns=["*.txt"],
         )
         md_docs = processor.discover_documents(
-            str(sample_documents_dir), patterns=["*.md"]
+            str(sample_documents_dir),
+            patterns=["*.md"],
         )
 
         assert len(txt_docs) == 3
@@ -183,11 +199,13 @@ class TestDocumentProcessor:
 
     def test_discover_nonexistent_directory(self, processor: DocumentProcessor):
         """Test discovering in nonexistent directory raises error."""
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(DirectoryNotFoundError):
             processor.discover_documents("/nonexistent/directory")
 
     def test_discover_file_not_directory(
-        self, processor: DocumentProcessor, sample_document: Path
+        self,
+        processor: DocumentProcessor,
+        sample_document: Path,
     ):
         """Test discovering with file path raises error."""
         with pytest.raises(ValueError, match="not a directory"):

@@ -1,10 +1,11 @@
 # Semantic Knowledge Base Backend
 
-A FastAPI-based semantic search API that enables document ingestion, automatic chunking, embedding generation, and intelligent search with reranking.
+A FastAPI-based semantic search API that enables document ingestion, automatic chunking, embedding generation, and intelligent search with reranking. Supports **multiple named indexes** for organizing different document collections.
 
 ## Features
 
-- **Document Ingestion**: Single file or batch directory processing
+- **Multi-Index Support**: Create and manage multiple named indexes for different document collections
+- **Document Ingestion**: Single file or batch directory processing into specific indexes
 - **Semantic Chunking**: Intelligent text segmentation using [semchunk](https://github.com/umarbutler/semchunk)
 - **Vector Embeddings**: 768-dimensional embeddings via Alibaba-NLP/gte-multilingual-base
 - **Reranked Search**: Two-stage retrieval with cross-encoder reranking
@@ -66,14 +67,57 @@ The API will be available at `http://localhost:8000`
 GET /health
 ```
 
+### Create Index
+
+Create a new named index for storing documents.
+
+```bash
+POST /create
+Content-Type: application/json
+
+{
+  "index_name": "my_documents"
+}
+```
+
+**Response (201 Created):**
+
+```json
+{
+  "index_name": "my_documents",
+  "status": "success",
+  "message": "Index 'my_documents' created successfully"
+}
+```
+
+### List Indexes
+
+List all available indexes.
+
+```bash
+GET /indexes
+```
+
+**Response:**
+
+```json
+{
+  "indexes": ["my_documents", "research_papers", "notes"],
+  "count": 3
+}
+```
+
 ### Encode Single Document
+
+Add a document to a specific index.
 
 ```bash
 POST /encode_doc
 Content-Type: application/json
 
 {
-  "file_path": "/path/to/document.md",
+  "document_path": "/path/to/document.md",
+  "index_name": "my_documents",
   "metadata": {}  # optional
 }
 ```
@@ -84,6 +128,7 @@ Content-Type: application/json
 {
   "status": "success",
   "message": "Successfully encoded document with 5 chunks",
+  "index_name": "my_documents",
   "document_path": "/path/to/document.md",
   "chunk_count": 5,
   "token_counts": [355, 467, 483, 345, 483]
@@ -92,12 +137,15 @@ Content-Type: application/json
 
 ### Batch Encode Directory
 
+Add all matching documents from a directory to a specific index.
+
 ```bash
 POST /encode_batch
 Content-Type: application/json
 
 {
   "directory_path": "/path/to/docs",
+  "index_name": "my_documents",
   "file_patterns": ["*.md", "*.txt"]  # optional, defaults to common text formats
 }
 ```
@@ -108,11 +156,14 @@ Content-Type: application/json
 {
   "status": "success",
   "message": "Batch processing started for 65 documents",
+  "index_name": "my_documents",
   "documents_queued": 65
 }
 ```
 
 ### Semantic Search
+
+Search for documents in a specific index.
 
 ```bash
 POST /query
@@ -120,6 +171,7 @@ Content-Type: application/json
 
 {
   "query": "How do I create a table in LanceDB?",
+  "index_name": "my_documents",
   "top_k": 5  # optional, default: 5
 }
 ```
@@ -130,6 +182,7 @@ Content-Type: application/json
 {
   "status": "success",
   "message": "Found 5 results",
+  "index_name": "my_documents",
   "results": [
     {
       "content": "## Create a table\n\nNext, let's create a Table...",
@@ -150,7 +203,6 @@ Configuration is managed via environment variables (prefix: `KB_`) or a `.env` f
 |----------|---------|-------------|
 | `KB_DEBUG` | `false` | Enable debug mode |
 | `KB_LANCEDB_PATH` | `./data/lancedb` | Path to LanceDB storage |
-| `KB_TABLE_NAME` | `chunks` | LanceDB table name |
 | `KB_EMBEDDING_MODEL` | `Alibaba-NLP/gte-multilingual-base` | HuggingFace embedding model |
 | `KB_RERANKER_MODEL` | `Alibaba-NLP/gte-multilingual-reranker-base` | HuggingFace reranker model |
 | `KB_MAX_CHUNK_TOKENS` | `512` | Maximum tokens per chunk |
@@ -166,10 +218,11 @@ backend/
 │   ├── main.py          # FastAPI application & endpoints
 │   ├── models.py        # Pydantic models & LanceDB schema
 │   ├── config.py        # Configuration settings
-│   ├── database.py      # LanceDB connection & operations
+│   ├── database.py      # LanceDB connection & multi-index operations
+│   ├── exceptions.py    # Custom exception classes
 │   └── services.py      # Document processing & ML models
 ├── data/
-│   └── lancedb/         # Vector database storage
+│   └── lancedb/         # Vector database storage (indexes as tables)
 ├── tests/               # Test suite
 ├── pyproject.toml       # Dependencies & project config
 └── uv.lock              # Lock file
@@ -177,13 +230,20 @@ backend/
 
 ## How It Works
 
-1. **Document Ingestion**
+1. **Index Management**
+   - Create named indexes to organize different document collections
+   - Each index is stored as a separate LanceDB table
+   - List and manage multiple indexes independently
+
+2. **Document Ingestion**
+   - Specify target index for document storage
    - Read document content from file
    - Split into semantic chunks using hierarchical text boundaries
    - Generate 768-dim embeddings for each chunk
-   - Store chunks + embeddings in LanceDB
+   - Store chunks + embeddings in the specified index
 
-2. **Semantic Search**
+3. **Semantic Search**
+   - Specify which index to search
    - Generate embedding for query
    - Retrieve top-k candidates via vector similarity (L2 distance)
    - Rerank candidates using cross-encoder model

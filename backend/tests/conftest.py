@@ -1,15 +1,20 @@
 """Pytest configuration and fixtures."""
 
+from __future__ import annotations
+
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings, settings
-from app.database import LanceDBManager
+from app.database import LanceDBManager, db_manager
 from app.main import app
+
+# Default test index name
+TEST_INDEX_NAME = "test_index"
 
 
 @pytest.fixture
@@ -17,7 +22,6 @@ def test_settings() -> Settings:
     """Create test settings with temporary database path."""
     return Settings(
         lancedb_path=tempfile.mkdtemp(),
-        table_name="test_chunks",
         debug=True,
     )
 
@@ -29,17 +33,14 @@ def temp_db(test_settings: Settings) -> Generator[LanceDBManager, None, None]:
     # Override the settings path
     original_path = settings.lancedb_path
     settings.lancedb_path = test_settings.lancedb_path
-    settings.table_name = test_settings.table_name
 
     db.connect()
-    db.get_or_create_table()
 
     yield db
 
     # Cleanup
     db.close()
     settings.lancedb_path = original_path
-    settings.table_name = "chunks"
 
 
 @pytest.fixture
@@ -47,6 +48,31 @@ def client() -> Generator[TestClient, None, None]:
     """Create a test client for the FastAPI app."""
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture
+def test_index(client: TestClient) -> str:
+    """Create a test index and return its name."""
+    # Create the test index
+    response = client.post("/create", json={"index_name": TEST_INDEX_NAME})
+    # If index already exists (409), that's fine for tests
+    if response.status_code not in (201, 409):
+        msg = f"Failed to create test index: {response.json()}"
+        raise RuntimeError(msg)
+    return TEST_INDEX_NAME
+
+
+@pytest.fixture(autouse=True)
+def cleanup_test_indexes():
+    """Clean up test indexes after each test."""
+    yield
+    # Clean up any test indexes created during the test
+    try:
+        for index_name in db_manager.list_indexes():
+            if index_name.startswith("test"):
+                db_manager.delete_index(index_name)
+    except Exception:  # noqa: BLE001, S110
+        pass  # Ignore cleanup errors
 
 
 @pytest.fixture
@@ -72,7 +98,7 @@ It supports multiple index types and is optimized for machine learning workloads
 
 Semantic search uses embeddings to find relevant documents based on meaning.
 This is different from keyword-based search which matches exact terms.
-"""
+""",
     )
     return doc_path
 
