@@ -1,4 +1,4 @@
-# simple-knowledge-base
+# Simple Knowledge Base
 
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-00a393.svg)](https://fastapi.tiangolo.com)
@@ -10,7 +10,7 @@
 
 Add your documents. Search with natural language. Find what matters.
 
-simple-knowledge-base uses semantic chunking and vector embeddings to understand your documents, not just match keywords. Results are reranked for relevance, so the best answers surface first.
+Simple Knowledge Base uses semantic chunking and vector embeddings to understand your documents, not just match keywords. Results are reranked for relevance, so the best answers surface first.
 
 ## ✨ Features
 
@@ -49,7 +49,7 @@ This launches:
 
 - **Backend**: <http://localhost:8000> (FastAPI + LanceDB)
 - **Frontend**: <http://localhost:5173> (React + Vite)
-- **API Docs**: <http://localhost:8000/docs>
+- **API Docs**: <http://localhost:8000/docs> (Swagger UI)
 
 Press `Ctrl+C` to stop both services.
 
