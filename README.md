@@ -1,6 +1,25 @@
-# Knowledge Base
+# simple-knowledge-base
 
-A semantic search application with document ingestion, chunking, embedding, and intelligent retrieval with reranking.
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-00a393.svg)](https://fastapi.tiangolo.com)
+[![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev)
+[![LanceDB](https://img.shields.io/badge/LanceDB-0.19-orange.svg)](https://lancedb.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+**A simple, local-first semantic knowledge base.**
+
+Add your documents. Search with natural language. Find what matters.
+
+simple-knowledge-base uses semantic chunking and vector embeddings to understand your documents, not just match keywords. Results are reranked for relevance, so the best answers surface first.
+
+## ✨ Features
+
+- **Multi-Index Support** — Organize documents into separate searchable collections
+- **Semantic Search** — Find information by meaning, not just keywords
+- **Smart Chunking** — Documents are split at natural boundaries for better context
+- **Reranked Results** — Cross-encoder reranking puts the best matches first
+- **Local & Private** — Everything runs on your machine, no cloud required
+- **Simple API** — Clean REST endpoints for easy integration
 
 ## Quick Start
 
@@ -36,7 +55,7 @@ make clean      # Clean generated files
 ## Project Structure
 
 ```text
-knowledge-base/
+simple-knowledge-base/
 ├── backend/          # FastAPI backend (Python 3.13)
 │   ├── app/          # Application code
 │   ├── tests/        # Test suite
@@ -45,6 +64,7 @@ knowledge-base/
 ├── scripts/          # Development scripts
 │   ├── dev.sh        # Combined dev server
 │   └── start-backend.sh
+├── .github/images/   # Screenshots and assets
 └── Makefile          # Development commands
 ```
 
@@ -61,3 +81,7 @@ knowledge-base/
 ## Documentation
 
 - [Backend API Documentation](backend/README.md)
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

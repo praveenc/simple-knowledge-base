@@ -1,4 +1,10 @@
-# Semantic Knowledge Base Backend
+# simple-knowledge-base Backend
+
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-00a393.svg)](https://fastapi.tiangolo.com)
+[![LanceDB](https://img.shields.io/badge/LanceDB-0.19-orange.svg)](https://lancedb.com)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+[![Tests](https://img.shields.io/badge/tests-72%20passed-brightgreen.svg)](#running-tests)
 
 A FastAPI-based semantic search API that enables document ingestion, automatic chunking, embedding generation, and intelligent search with reranking. Supports **multiple named indexes** for organizing different document collections.
 
@@ -34,8 +40,8 @@ A FastAPI-based semantic search API that enables document ingestion, automatic c
 
 ```bash
 # Clone the repository
-git clone <repo-url>
-cd knowledge-base/backend
+git clone https://github.com/praveenc/simple-knowledge-base.git
+cd simple-knowledge-base/backend
 
 # Install dependencies
 uv sync
