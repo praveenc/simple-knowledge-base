@@ -47,7 +47,10 @@ export function SearchInterface({ onSearch, isLoading }: SearchInterfaceProps) {
           variant="h2"
           description="Search through your knowledge base using natural language queries"
         >
-          Semantic Search
+          <SpaceBetween size="xs" direction="horizontal" alignItems="center">
+              <img src="/knowledge-icon.svg" alt="" style={{ height: '24px', width: '24px' }} />
+              <span>Search Knowledge Base</span>
+          </SpaceBetween>
         </Header>
       }
     >
