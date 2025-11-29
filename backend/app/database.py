@@ -16,6 +16,14 @@ from app.config import settings
 from app.exceptions import IndexAlreadyExistsError, IndexNotFoundError
 from app.models import ChunkSchema
 
+# =============================================================================
+# Type Aliases (PEP 695 - Python 3.12+)
+# =============================================================================
+
+type Embedding = list[float]
+type EmbeddingBatch = list[Embedding]
+type SearchResults = list[dict]
+
 
 class LanceDBManager:
     """Manager for LanceDB operations with multi-index support."""
@@ -122,7 +130,7 @@ class LanceDBManager:
         self,
         index_name: str,
         contents: list[str],
-        embeddings: list[list[float]],
+        embeddings: EmbeddingBatch,
         source_document: str,
         chunk_offsets: list[int],
         token_counts: list[int],
@@ -176,9 +184,9 @@ class LanceDBManager:
     def vector_search(
         self,
         index_name: str,
-        query_embedding: list[float],
+        query_embedding: Embedding,
         limit: int = 20,
-    ) -> list[dict]:
+    ) -> SearchResults:
         """
         Perform vector similarity search on a specific index.
 
