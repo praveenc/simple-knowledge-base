@@ -107,6 +107,23 @@ GET /indexes
 }
 ```
 
+### Get Index Record Count
+
+Get the number of records (chunks) in an index.
+
+```bash
+GET /indexes/{index_name}/count
+```
+
+**Response:**
+
+```json
+{
+  "index_name": "my_documents",
+  "record_count": 150
+}
+```
+
 ### Encode Single Document
 
 Add a document to a specific index.

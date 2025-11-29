@@ -26,6 +26,7 @@ from app.models import (
     EncodeDocRequest,
     EncodeDocResponse,
     ErrorResponse,
+    IndexRecordCountResponse,
     ListIndexesResponse,
     QueryRequest,
     QueryResponse,
@@ -216,6 +217,27 @@ async def list_indexes() -> ListIndexesResponse:
     return ListIndexesResponse(
         indexes=indexes,
         count=len(indexes),
+    )
+
+
+@app.get(
+    "/indexes/{index_name}/count",
+    response_model=IndexRecordCountResponse,
+    responses={
+        404: {"model": ErrorResponse, "description": "Index not found"},
+    },
+)
+async def get_record_count(index_name: str) -> IndexRecordCountResponse:
+    """
+    Get the number of records in an index.
+
+    Returns the count of chunks/rows stored in the specified index.
+    """
+    logger.info(f"Getting record count for index: {index_name}")
+    count = db_manager.count_rows(index_name)
+    return IndexRecordCountResponse(
+        index_name=index_name,
+        record_count=count,
     )
 
 

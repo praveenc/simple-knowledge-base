@@ -74,6 +74,49 @@ class TestListIndexesEndpoint:
         assert data["count"] >= 0
 
 
+class TestGetRecordCountEndpoint:
+    """Tests for /indexes/{index_name}/count endpoint."""
+
+    def test_get_record_count_empty_index(self, client: TestClient, test_index: str):
+        """Test getting record count for an empty index."""
+        response = client.get(f"/indexes/{test_index}/count")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["index_name"] == test_index
+        assert data["record_count"] == 0
+
+    def test_get_record_count_with_documents(
+        self,
+        client: TestClient,
+        test_index: str,
+        sample_document: Path,
+    ):
+        """Test getting record count after adding documents."""
+        # First encode a document
+        client.post(
+            "/encode_doc",
+            json={
+                "document_path": str(sample_document),
+                "index_name": test_index,
+            },
+        )
+
+        # Get record count
+        response = client.get(f"/indexes/{test_index}/count")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["index_name"] == test_index
+        assert data["record_count"] > 0
+
+    def test_get_record_count_nonexistent_index(self, client: TestClient):
+        """Test getting record count for non-existent index returns 404."""
+        response = client.get("/indexes/nonexistent_index/count")
+
+        assert response.status_code == 404
+
+
 class TestEncodeDocEndpoint:
     """Tests for /encode_doc endpoint."""
 
@@ -118,7 +161,9 @@ class TestEncodeDocEndpoint:
         assert "not found" in response.json()["detail"].lower()
 
     def test_encode_to_nonexistent_index(
-        self, client: TestClient, sample_document: Path,
+        self,
+        client: TestClient,
+        sample_document: Path,
     ):
         """Test encoding to nonexistent index returns 404."""
         response = client.post(
@@ -200,7 +245,9 @@ class TestEncodeBatchEndpoint:
         assert data["documents_queued"] > 0
 
     def test_encode_batch_nonexistent_directory(
-        self, client: TestClient, test_index: str,
+        self,
+        client: TestClient,
+        test_index: str,
     ):
         """
         Test batch encoding nonexistent directory returns 404.

@@ -129,6 +129,13 @@ class ListIndexesResponse(BaseModel):
     count: int = Field(..., description="Number of indexes")
 
 
+class IndexRecordCountResponse(BaseModel):
+    """Response model for index record count."""
+
+    index_name: str = Field(..., description="Name of the index")
+    record_count: int = Field(..., description="Number of records in the index")
+
+
 class SearchResult(BaseModel):
     """Model for a single search result."""
 

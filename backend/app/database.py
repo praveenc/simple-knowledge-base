@@ -211,6 +211,23 @@ class LanceDBManager:
         )
         return results
 
+    def count_rows(self, index_name: str) -> int:
+        """
+        Count the number of rows in an index.
+
+        Args:
+            index_name: Name of the index.
+
+        Returns:
+            Number of rows in the index.
+
+        Raises:
+            IndexNotFoundError: If index does not exist.
+
+        """
+        table = self._get_table(index_name)
+        return table.count_rows()
+
     def delete_index(self, index_name: str) -> bool:
         """
         Delete an index from the database.
