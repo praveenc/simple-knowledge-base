@@ -1,0 +1,33 @@
+{
+  "name": "@simple-kb/mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server for Simple Knowledge Base - search and fetch documents",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "simple-kb-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "inspect:dev": "npx @modelcontextprotocol/inspector npx tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": ["mcp", "model-context-protocol", "knowledge-base", "search", "lancedb"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
