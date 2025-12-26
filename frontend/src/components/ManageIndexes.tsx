@@ -40,9 +40,11 @@ interface ManageIndexesProps {
   ) => string;
   onRemoveNotification: (id: string) => void;
   onNavigateToAddKnowledge: (indexName: string) => void;
+  onIndexChange: () => void;
+  hasIndexes: boolean;
 }
 
-export function ManageIndexes({ onNotification, onNavigateToAddKnowledge }: ManageIndexesProps) {
+export function ManageIndexes({ onNotification, onNavigateToAddKnowledge, onIndexChange, hasIndexes }: ManageIndexesProps) {
   // Action mode: create or delete
   const [actionMode, setActionMode] = useState<'create' | 'delete'>('create');
 
@@ -77,13 +79,14 @@ export function ManageIndexes({ onNotification, onNavigateToAddKnowledge }: Mana
       setCreatedIndexName(newIndexName);
       setNewIndexName('');
       setIndexRefreshTrigger((prev) => prev + 1);
+      onIndexChange(); // Notify parent to refresh index count
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create index';
       onNotification('error', 'Failed to create index', message);
     } finally {
       setIsCreatingIndex(false);
     }
-  }, [newIndexName, isValidIndexName, onNotification]);
+  }, [newIndexName, isValidIndexName, onNotification, onIndexChange]);
 
   // Handle showing delete confirmation modal with record count
   const handleShowDeleteConfirm = useCallback(async () => {
@@ -110,13 +113,16 @@ export function ManageIndexes({ onNotification, onNavigateToAddKnowledge }: Mana
       onNotification('success', 'Index deleted', response.message);
       setSelectedIndex(null);
       setIndexRefreshTrigger((prev) => prev + 1);
+      onIndexChange(); // Notify parent to refresh index count
+      // Switch back to create mode since we just deleted an index
+      setActionMode('create');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to delete index';
       onNotification('error', 'Failed to delete index', message);
     } finally {
       setIsDeletingIndex(false);
     }
-  }, [selectedIndex, onNotification]);
+  }, [selectedIndex, onNotification, onIndexChange]);
 
   return (
     <SpaceBetween size="l">
@@ -153,6 +159,7 @@ export function ManageIndexes({ onNotification, onNavigateToAddKnowledge }: Mana
                   value: 'delete',
                   label: 'Delete Index',
                   description: 'Permanently remove an existing index and all its data',
+                  disabled: !hasIndexes,
                 },
               ]}
             />
