@@ -3,7 +3,7 @@
 #
 # Run `make help` for available commands
 
-.PHONY: help dev backend frontend install test clean
+.PHONY: help dev backend frontend install test clean mcp-build mcp-dev mcp-inspect
 
 # Default target
 .DEFAULT_GOAL := help
@@ -35,6 +35,8 @@ install: ## Install all dependencies
 	@cd backend && uv sync
 	@echo "$(CYAN)[frontend]$(NC) Installing Node dependencies..."
 	@cd frontend && npm install
+	@echo "$(CYAN)[mcp-server]$(NC) Installing Node dependencies..."
+	@cd mcp-server && npm install
 	@echo "$(GREEN)[done]$(NC) All dependencies installed"
 
 test: ## Run backend tests
@@ -48,6 +50,8 @@ lint: ## Run linters on backend and frontend
 	@cd backend && source .venv/bin/activate && ruff format && ruff check --fix
 	@echo "$(CYAN)[frontend]$(NC) Running eslint..."
 	@cd frontend && npm run lint
+	@echo "$(CYAN)[mcp-server]$(NC) Running typecheck..."
+	@cd mcp-server && npm run typecheck
 	@echo "$(GREEN)[done]$(NC) Linting complete"
 
 clean: ## Clean up generated files and caches
@@ -56,4 +60,19 @@ clean: ## Clean up generated files and caches
 	@find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
 	@rm -rf backend/data/lancedb/* 2>/dev/null || true
+	@rm -rf mcp-server/dist 2>/dev/null || true
 	@echo "$(GREEN)[done]$(NC) Cleanup complete"
+
+# MCP Server targets
+mcp-build: ## Build the MCP server
+	@echo "$(CYAN)[mcp-server]$(NC) Building..."
+	@cd mcp-server && npm run build
+	@echo "$(GREEN)[done]$(NC) MCP server built"
+
+mcp-dev: ## Run MCP server in development mode
+	@echo "$(CYAN)[mcp-server]$(NC) Starting in dev mode..."
+	@cd mcp-server && npm run dev
+
+mcp-inspect: ## Test MCP server with MCP Inspector
+	@echo "$(CYAN)[mcp-server]$(NC) Starting MCP Inspector..."
+	@cd mcp-server && npm run inspect:dev
