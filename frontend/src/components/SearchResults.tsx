@@ -3,18 +3,11 @@
  * Displays the search results from the knowledge base
  */
 
-import {
-  Badge,
-  Box,
-  ColumnLayout,
-  Container,
-  ExpandableSection,
-  Header,
-  Icon,
-  ProgressBar,
-  SpaceBetween,
-  StatusIndicator,
-} from '@cloudscape-design/components';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Search, FileText, Loader2, ChevronDown, Clock, Ruler, Info } from 'lucide-react';
 import type { SearchResult } from '../api/types';
 
 interface SearchResultsProps {
@@ -25,7 +18,6 @@ interface SearchResultsProps {
   isLoading: boolean;
 }
 
-// LanceDB default similarity metric
 const SIMILARITY_METRIC = 'L2 (Euclidean)';
 
 function formatScore(score: number): number {
@@ -36,6 +28,15 @@ function extractFilename(path: string): string {
   return path.split('/').pop() || path;
 }
 
+function getBadgeVariant(score: number, minScore: number, maxScore: number, totalResults: number): 'default' | 'secondary' | 'destructive' {
+  if (totalResults === 1 || maxScore === minScore) return 'default';
+  const range = maxScore - minScore;
+  const position = (score - minScore) / range;
+  if (position >= 0.67) return 'default';
+  if (position >= 0.33) return 'secondary';
+  return 'destructive';
+}
+
 interface ResultItemProps {
   item: SearchResult;
   rank: number;
@@ -44,222 +45,169 @@ interface ResultItemProps {
   maxScore: number;
 }
 
-// Get badge color based on relative position in result set
-function getBadgeColor(score: number, minScore: number, maxScore: number, totalResults: number): 'green' | 'red' | 'severity-medium' {
-  // If only one result or all same scores, use green
-  if (totalResults === 1 || maxScore === minScore) return 'green';
-  
-  // Calculate position in range (0 = worst, 1 = best)
-  const range = maxScore - minScore;
-  const position = (score - minScore) / range;
-  
-  // Top third = green, middle third = orange, bottom third = red
-  if (position >= 0.67) return 'green';
-  if (position >= 0.33) return 'severity-medium';
-  return 'red';
-}
-
 function ResultItem({ item, rank, totalResults, minScore, maxScore }: ResultItemProps) {
   const score = formatScore(item.relevance_score);
   const filename = extractFilename(item.source_document);
-  const badgeColor = getBadgeColor(item.relevance_score, minScore, maxScore, totalResults);
-  
+  const badgeVariant = getBadgeVariant(item.relevance_score, minScore, maxScore, totalResults);
+
   return (
-    <Container
-      header={
-        <Header
-          variant="h3"
-          description={
-            <SpaceBetween size="xs" direction="horizontal" alignItems="center">
-              <Icon name="file" />
-              <Box color="text-body-secondary" fontSize="body-s">
-                {item.source_document}
-              </Box>
-            </SpaceBetween>
-          }
-          actions={
-            <Badge color={badgeColor}>
-              {score}% match
-            </Badge>
-          }
-        >
-          <SpaceBetween size="xs" direction="horizontal" alignItems="center">
-            <Box color="text-status-inactive" fontSize="body-s">#{rank}</Box>
-            <Box>{filename}</Box>
-          </SpaceBetween>
-        </Header>
-      }
-    >
-      <SpaceBetween size="m">
-        {/* Relevance bar */}
-        <ProgressBar
-          value={score}
-          variant="standalone"
-          additionalInfo={`Relevance score: ${item.relevance_score.toFixed(3)}`}
-        />
-        
-        {/* Content preview */}
-        <ExpandableSection
-          variant="footer"
-          headerText="Content preview"
-          defaultExpanded={rank === 1}
-        >
-          <Box
-            padding="s"
-            color="text-body-secondary"
-            fontSize="body-s"
-          >
-            <pre style={{
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-              fontFamily: 'Monaco, Consolas, "Courier New", monospace',
-              fontSize: '13px',
-              lineHeight: '1.5',
-              margin: 0,
-              backgroundColor: 'var(--color-background-code-editor-default)',
-              padding: '12px',
-              borderRadius: '4px',
-              maxHeight: '300px',
-              overflow: 'auto',
-            }}>
+    <Card className="overflow-hidden">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="text-sm font-medium text-muted-foreground">#{rank}</span>
+            <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+            <div className="min-w-0">
+              <CardTitle className="text-base truncate">{filename}</CardTitle>
+              <CardDescription className="truncate text-xs">{item.source_document}</CardDescription>
+            </div>
+          </div>
+          <Badge variant={badgeVariant} className="shrink-0">{score}% match</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-1">
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Relevance</span>
+            <span className="font-medium">{item.relevance_score.toFixed(3)}</span>
+          </div>
+          <Progress value={score} className="h-2" />
+        </div>
+
+        <Collapsible defaultOpen={rank === 1}>
+          <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium hover:text-primary transition-colors group w-full">
+            <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
+            Content preview
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pt-3">
+            <pre className="text-sm bg-muted p-4 rounded-lg overflow-auto max-h-72 whitespace-pre-wrap break-words font-mono leading-relaxed">
               {item.content}
             </pre>
-          </Box>
-        </ExpandableSection>
+          </CollapsibleContent>
+        </Collapsible>
 
-        {/* Metadata */}
-        <ColumnLayout columns={2} variant="text-grid">
+        <div className="grid grid-cols-2 gap-4 pt-2 border-t">
           <div>
-            <Box variant="awsui-key-label">Chunk offset</Box>
-            <Box>{item.chunk_offset.toLocaleString()} characters</Box>
+            <p className="text-xs text-muted-foreground">Chunk offset</p>
+            <p className="text-sm font-medium">{item.chunk_offset.toLocaleString()} chars</p>
           </div>
           <div>
-            <Box variant="awsui-key-label">Content length</Box>
-            <Box>{item.content.length.toLocaleString()} characters</Box>
+            <p className="text-xs text-muted-foreground">Content length</p>
+            <p className="text-sm font-medium">{item.content.length.toLocaleString()} chars</p>
           </div>
-        </ColumnLayout>
-      </SpaceBetween>
-    </Container>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
 export function SearchResults({ results, query, indexName, searchTimeMs, isLoading }: SearchResultsProps) {
   if (isLoading) {
     return (
-      <Container>
-        <Box textAlign="center" padding="xxl">
-          <SpaceBetween size="m" alignItems="center">
-            <StatusIndicator type="loading">
-              Searching for relevant content...
-            </StatusIndicator>
-            <Box color="text-body-secondary" fontSize="body-s">
-              Embedding query and searching vector database
-            </Box>
-          </SpaceBetween>
-        </Box>
-      </Container>
+      <Card>
+        <CardContent className="py-12">
+          <div className="flex flex-col items-center gap-4 text-center">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <div>
+              <p className="font-medium">Searching for relevant content...</p>
+              <p className="text-sm text-muted-foreground">Embedding query and searching vector database</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 
   if (!query) {
     return (
-      <Container>
-        <Box textAlign="center" padding="xxl">
-          <SpaceBetween size="m" alignItems="center">
-            <Icon name="search" size="large" variant="subtle" />
-            <Box color="text-body-secondary">
-              Enter a query above to search the knowledge base
-            </Box>
-          </SpaceBetween>
-        </Box>
-      </Container>
+      <Card>
+        <CardContent className="py-12">
+          <div className="flex flex-col items-center gap-4 text-center">
+            <Search className="h-12 w-12 text-muted-foreground/50" />
+            <p className="text-muted-foreground">Enter a query above to search the knowledge base</p>
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 
   if (results.length === 0) {
     return (
-      <Container>
-        <Box textAlign="center" padding="xxl">
-          <SpaceBetween size="m" alignItems="center">
-            <StatusIndicator type="info">No results found</StatusIndicator>
-            <Box color="text-body-secondary">
-              Try rephrasing your query or using different keywords
-            </Box>
-          </SpaceBetween>
-        </Box>
-      </Container>
+      <Card>
+        <CardContent className="py-12">
+          <div className="flex flex-col items-center gap-4 text-center">
+            <Info className="h-8 w-8 text-blue-500" />
+            <div>
+              <p className="font-medium">No results found</p>
+              <p className="text-sm text-muted-foreground">Try rephrasing your query or using different keywords</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 
-  // Format search time as seconds with ms in brackets
   const formatSearchTime = (ms: number | null): string => {
     if (ms === null) return '—';
     const seconds = (ms / 1000).toFixed(3);
     return `${seconds}s (${ms}ms)`;
   };
 
+  const scores = results.map((r) => r.relevance_score);
+  const minScore = Math.min(...scores);
+  const maxScore = Math.max(...scores);
+
   return (
-    <SpaceBetween size="l">
-      {/* Search Results Header - Compact layout */}
-      <Container
-        header={
-          <Header
-            variant="h2"
-            description={<>Displaying top <strong>{results.length}</strong> results for: <strong>"{query}"</strong></>}
-          >
-            <SpaceBetween size="xs" direction="horizontal" alignItems="center">
-              <Icon name="search" />
-              <span>Search Results</span>
-            </SpaceBetween>
-          </Header>
-        }
-      >
-        {/* Search metadata in a clean grid */}
-        <ColumnLayout columns={3} variant="text-grid">
-          <div>
-            <Box variant="awsui-key-label">Index</Box>
-            <SpaceBetween size="xs" direction="horizontal" alignItems="center">
-              <Icon name="folder" variant="subtle" />
-              <Box fontWeight="bold" color="text-status-warning">{indexName || 'Default'}</Box>
-            </SpaceBetween>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Search className="h-5 w-5" />
+            <CardTitle>Search Results</CardTitle>
           </div>
-          <div>
-            <Box variant="awsui-key-label">Similarity Metric</Box>
-            <SpaceBetween size="xs" direction="horizontal" alignItems="center">
-              <Icon name="status-info" variant="subtle" />
-              <Box>{SIMILARITY_METRIC}</Box>
-            </SpaceBetween>
+          <CardDescription>
+            Displaying top <strong>{results.length}</strong> results for: <strong>"{query}"</strong>
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <p className="text-xs text-muted-foreground">Index</p>
+                <p className="font-medium text-primary">{indexName || 'Default'}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Ruler className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <p className="text-xs text-muted-foreground">Similarity Metric</p>
+                <p className="font-medium">{SIMILARITY_METRIC}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-emerald-500" />
+              <div>
+                <p className="text-xs text-muted-foreground">Search Time</p>
+                <p className="font-medium">{formatSearchTime(searchTimeMs)}</p>
+              </div>
+            </div>
           </div>
-          <div>
-            <Box variant="awsui-key-label">Search Time</Box>
-            <SpaceBetween size="xs" direction="horizontal" alignItems="center">
-              <Icon name="status-positive" variant="success" />
-              <Box fontWeight="bold">{formatSearchTime(searchTimeMs)}</Box>
-            </SpaceBetween>
-          </div>
-        </ColumnLayout>
-      </Container>
-      
-      {/* Results list */}
-      <SpaceBetween size="m">
-        {(() => {
-          // Calculate min/max scores for relative coloring
-          const scores = results.map(r => r.relevance_score);
-          const minScore = Math.min(...scores);
-          const maxScore = Math.max(...scores);
-          
-          return results.map((item, index) => (
-            <ResultItem
-              key={`${item.source_document}-${item.chunk_offset}`}
-              item={item}
-              rank={index + 1}
-              totalResults={results.length}
-              minScore={minScore}
-              maxScore={maxScore}
-            />
-          ));
-        })()}
-      </SpaceBetween>
-    </SpaceBetween>
+        </CardContent>
+      </Card>
+
+      <div className="space-y-4">
+        {results.map((item, index) => (
+          <ResultItem
+            key={`${item.source_document}-${item.chunk_offset}`}
+            item={item}
+            rank={index + 1}
+            totalResults={results.length}
+            minScore={minScore}
+            maxScore={maxScore}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
